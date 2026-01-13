@@ -1,5 +1,6 @@
 # ---
-# SHAP Analysis for Case 2: Propensity Prediction
+# SHAP Analysis for Order-Based Model
+# Segment-specific analysis using Case 1 clusters
 # ---
 
 import pandas as pd
@@ -9,6 +10,8 @@ import json
 import logging
 import joblib
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,9 +20,17 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-MODELS_PATH = "outputs/models"
-PLOTS_PATH = "outputs/plots"
+MODELS_PATH = "outputs/order_based/models"
+PLOTS_PATH = "outputs/order_based/visualizations"
 CLUSTER_PATH = "../cluster01/sg_user.csv"
+
+# Segment names from Case 1
+SEGMENT_NAMES = {
+    0: 'Casual Walk-in',
+    1: 'Golden Whales',
+    2: 'High Potential',
+    3: 'Drifting Risk'
+}
 
 # ============================================================================
 # SHAP VALUE CALCULATION
@@ -31,7 +42,7 @@ def calculate_shap_values(model, X_test, model_name):
     
     Args:
         model: Trained model
-        X_test: Test features DataFrame
+        X_test: Test features (numpy array or DataFrame)
         model_name: Name of the model (for selecting appropriate explainer)
         
     Returns:
@@ -115,7 +126,7 @@ def extract_top_drivers(shap_values, feature_names, top_n=20):
 # SEGMENT-SPECIFIC SHAP ANALYSIS
 # ============================================================================
 
-def load_segmentation():
+def load_segmentation(cluster_path=CLUSTER_PATH):
     """
     Load Case 1 segmentation data.
     
@@ -124,10 +135,10 @@ def load_segmentation():
     """
     logger.info("\nLoading segmentation data...")
     
-    if not os.path.exists(CLUSTER_PATH):
-        raise FileNotFoundError(f"Segmentation file not found: {CLUSTER_PATH}")
+    if not os.path.exists(cluster_path):
+        raise FileNotFoundError(f"Segmentation file not found: {cluster_path}")
     
-    seg_df = pd.read_csv(CLUSTER_PATH)
+    seg_df = pd.read_csv(cluster_path)
     
     # Ensure user_id column exists
     if 'user_id' not in seg_df.columns:
@@ -135,6 +146,11 @@ def load_segmentation():
             seg_df = seg_df.rename(columns={'id': 'user_id'})
     
     logger.info(f"  ✓ Loaded {len(seg_df)} users with segments")
+    
+    # Show segment distribution
+    for cluster_id, name in SEGMENT_NAMES.items():
+        count = (seg_df['value_cluster'] == cluster_id).sum()
+        logger.info(f"    {name}: {count:,}")
     
     return seg_df[['user_id', 'value_cluster']]
 
@@ -145,9 +161,9 @@ def analyze_by_segment(shap_values, X_test, feature_names, user_ids, segmentatio
     
     Args:
         shap_values: SHAP values array
-        X_test: Test features DataFrame
+        X_test: Test features DataFrame or array
         feature_names: List of feature names
-        user_ids: User IDs for test set
+        user_ids: User IDs for test set (Series or array)
         segmentation_df: DataFrame with user_id and value_cluster
         
     Returns:
@@ -157,24 +173,25 @@ def analyze_by_segment(shap_values, X_test, feature_names, user_ids, segmentatio
     logger.info("SEGMENT-SPECIFIC SHAP ANALYSIS")
     logger.info("="*80)
     
-    # Define segment names
-    segment_names = {
-        0: 'Casual Walk-in',
-        1: 'Golden Whales',
-        2: 'High Potential',
-        3: 'Drifting Risk'
-    }
-    
     # Create DataFrame with SHAP values and user info
     shap_df = pd.DataFrame(shap_values, columns=feature_names)
-    shap_df['user_id'] = user_ids.values
+    
+    # Handle user_ids as Series or array
+    if hasattr(user_ids, 'values'):
+        shap_df['user_id'] = user_ids.values
+    else:
+        shap_df['user_id'] = user_ids
     
     # Merge with segmentation
     shap_df = shap_df.merge(segmentation_df, on='user_id', how='left')
     
+    # Count matched users
+    matched = shap_df['value_cluster'].notna().sum()
+    logger.info(f"  Matched {matched:,} / {len(shap_df):,} users with segments")
+    
     segment_results = {}
     
-    for segment_id, segment_name in segment_names.items():
+    for segment_id, segment_name in SEGMENT_NAMES.items():
         logger.info(f"\n  Segment: {segment_name} (Cluster {segment_id})")
         
         # Filter to segment
@@ -190,10 +207,14 @@ def analyze_by_segment(shap_values, X_test, feature_names, user_ids, segmentatio
         # Calculate mean absolute SHAP for segment
         mean_abs_shap = np.abs(segment_shap).mean(axis=0)
         
+        # Also calculate mean SHAP (direction)
+        mean_shap = segment_shap.mean(axis=0)
+        
         # Create importance DataFrame
         importance_df = pd.DataFrame({
             'feature': feature_names,
-            'mean_abs_shap': mean_abs_shap
+            'mean_abs_shap': mean_abs_shap,
+            'mean_shap': mean_shap  # Direction of effect
         }).sort_values('mean_abs_shap', ascending=False)
         
         importance_df['rank'] = range(1, len(importance_df) + 1)
@@ -209,7 +230,8 @@ def analyze_by_segment(shap_values, X_test, feature_names, user_ids, segmentatio
         # Log top 5 drivers for this segment
         logger.info("    Top 5 drivers:")
         for _, row in importance_df.head(5).iterrows():
-            logger.info(f"      {row['rank']:2d}. {row['feature']}: {row['mean_abs_shap']:.4f}")
+            direction = "+" if row['mean_shap'] > 0 else "-"
+            logger.info(f"      {row['rank']:2d}. {row['feature']}: {row['mean_abs_shap']:.4f} ({direction})")
     
     return segment_results
 
@@ -265,7 +287,7 @@ def compare_segment_drivers(segment_results, top_n=10):
 # SHAP VISUALIZATIONS
 # ============================================================================
 
-def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot SHAP summary plot (beeswarm).
     """
@@ -281,7 +303,7 @@ def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_purc
     shap.summary_plot(shap_values, X_test, feature_names=feature_names, 
                      show=False, max_display=20)
     
-    plt.title('SHAP Feature Importance (Overall)', fontsize=14, fontweight='bold')
+    plt.title('SHAP Feature Importance - Order-Based Model', fontsize=14, fontweight='bold')
     plt.tight_layout()
     
     os.makedirs(save_path, exist_ok=True)
@@ -294,7 +316,7 @@ def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_purc
     return file_path
 
 
-def plot_shap_bar(shap_values, feature_names, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_shap_bar(shap_values, feature_names, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot SHAP bar chart (mean absolute values).
     """
@@ -309,10 +331,11 @@ def plot_shap_bar(shap_values, feature_names, target_name='will_purchase', save_
     top_values = mean_abs_shap[sorted_idx]
     
     plt.figure(figsize=(10, 10))
-    plt.barh(range(len(top_features)), top_values[::-1], color='steelblue')
+    colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(top_features)))
+    plt.barh(range(len(top_features)), top_values[::-1], color=colors[::-1])
     plt.yticks(range(len(top_features)), top_features[::-1])
     plt.xlabel('Mean |SHAP Value|', fontsize=12)
-    plt.title('Top 20 Feature Importance (SHAP)', fontsize=14, fontweight='bold')
+    plt.title('Top 20 Feature Importance (SHAP) - Order-Based Model', fontsize=14, fontweight='bold')
     plt.grid(True, alpha=0.3, axis='x')
     plt.tight_layout()
     
@@ -326,11 +349,13 @@ def plot_shap_bar(shap_values, feature_names, target_name='will_purchase', save_
     return file_path
 
 
-def plot_shap_by_segment(segment_results, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_shap_by_segment(segment_results, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot SHAP importance comparison across segments.
     """
     logger.info("\nCreating segment comparison plot...")
+    
+    import seaborn as sns
     
     # Collect top 10 features from each segment
     all_top_features = set()
@@ -360,11 +385,17 @@ def plot_shap_by_segment(segment_results, target_name='will_purchase', save_path
     pivot_df['avg'] = pivot_df.mean(axis=1)
     pivot_df = pivot_df.sort_values('avg', ascending=False).drop('avg', axis=1).head(15)
     
+    # Reorder columns - ensure all 4 segments are present
+    col_order = ['Casual Walk-in', 'Golden Whales', 'High Potential', 'Drifting Risk']
+    for col in col_order:
+        if col not in pivot_df.columns:
+            pivot_df[col] = 0
+    pivot_df = pivot_df[col_order]
+    
     plt.figure(figsize=(12, 10))
-    import seaborn as sns
     sns.heatmap(pivot_df, annot=True, fmt='.3f', cmap='YlOrRd', 
                 cbar_kws={'label': 'Mean |SHAP Value|'})
-    plt.title('Feature Importance by Segment', fontsize=14, fontweight='bold')
+    plt.title('Feature Importance by Segment - Order-Based Model', fontsize=14, fontweight='bold')
     plt.xlabel('Customer Segment', fontsize=12)
     plt.ylabel('Feature', fontsize=12)
     plt.tight_layout()
@@ -379,11 +410,137 @@ def plot_shap_by_segment(segment_results, target_name='will_purchase', save_path
     return file_path
 
 
+def plot_shap_summary_per_segment(segment_results, X_test_full, feature_names, user_ids, segmentation_df, 
+                                  target_name='will_repurchase', save_path=PLOTS_PATH):
+    """
+    Create SHAP summary (beeswarm) plots for each segment using shap.summary_plot().
+    Same style as the overall SHAP summary plot.
+    """
+    try:
+        import shap
+    except ImportError:
+        logger.warning("SHAP not installed. Skipping per-segment summary plots.")
+        return []
+    
+    logger.info("\nCreating SHAP summary plots for each segment (using shap.summary_plot)...")
+    
+    plot_paths = []
+    
+    # Create mapping of user_id to segment
+    user_to_segment = dict(zip(segmentation_df['user_id'], segmentation_df['value_cluster']))
+    
+    # Map user_ids to segments
+    if hasattr(user_ids, 'values'):
+        user_id_array = user_ids.values
+    else:
+        user_id_array = user_ids
+    
+    segment_labels = np.array([user_to_segment.get(uid, -1) for uid in user_id_array])
+    
+    for segment_name, results in segment_results.items():
+        if results['n_samples'] == 0:
+            logger.info(f"  Skipping {segment_name} (no samples)")
+            continue
+        
+        segment_id = results['segment_id']
+        logger.info(f"  Creating SHAP summary for {segment_name} (n={results['n_samples']})")
+        
+        # Filter to this segment
+        segment_mask = segment_labels == segment_id
+        segment_shap_values = results['shap_values']
+        segment_X = X_test_full[segment_mask]
+        
+        # Create SHAP summary plot (beeswarm style)
+        plt.figure(figsize=(12, 10))
+        shap.summary_plot(
+            segment_shap_values, 
+            segment_X, 
+            feature_names=feature_names,
+            show=False,
+            max_display=20
+        )
+        
+        plt.title(f'SHAP Feature Importance - {segment_name}\n(n={results["n_samples"]} orders)', 
+                 fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        # Save
+        os.makedirs(save_path, exist_ok=True)
+        safe_name = segment_name.replace(' ', '_').replace('-', '_').lower()
+        file_path = f"{save_path}/{target_name}_shap_summary_{safe_name}.png"
+        plt.savefig(file_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        plot_paths.append(file_path)
+        logger.info(f"    ✓ Saved to: {file_path}")
+    
+    logger.info(f"  ✓ Created {len(plot_paths)} segment-specific SHAP summary plots")
+    
+    return plot_paths
+
+
+def plot_segment_driver_comparison(segment_results, target_name='will_repurchase', save_path=PLOTS_PATH):
+    """
+    Plot grouped bar chart comparing top drivers across segments.
+    """
+    logger.info("\nCreating segment driver comparison plot...")
+    
+    # Get top 5 features overall
+    all_importance = {}
+    for segment_name, results in segment_results.items():
+        for _, row in results['importance'].iterrows():
+            if row['feature'] not in all_importance:
+                all_importance[row['feature']] = 0
+            all_importance[row['feature']] += row['mean_abs_shap']
+    
+    top_features = sorted(all_importance.keys(), key=lambda x: all_importance[x], reverse=True)[:8]
+    
+    # Prepare data
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    x = np.arange(len(top_features))
+    
+    # Define all 4 segments in order
+    all_segments = ['Casual Walk-in', 'Golden Whales', 'High Potential', 'Drifting Risk']
+    colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12']
+    width = 0.2
+    
+    for i, segment_name in enumerate(all_segments):
+        if segment_name in segment_results:
+            results = segment_results[segment_name]
+            importance_dict = dict(zip(results['importance']['feature'], results['importance']['mean_abs_shap']))
+            values = [importance_dict.get(f, 0) for f in top_features]
+        else:
+            # Segment has no data - show zeros
+            values = [0] * len(top_features)
+        ax.bar(x + i * width, values, width, label=segment_name, color=colors[i % len(colors)])
+    
+    ax.set_xlabel('Feature', fontsize=12)
+    ax.set_ylabel('Mean |SHAP Value|', fontsize=12)
+    ax.set_title('Top Feature Importance by Segment', fontsize=14, fontweight='bold')
+    ax.set_xticks(x + width * 1.5)
+    ax.set_xticklabels(top_features, rotation=45, ha='right', fontsize=10)
+    ax.legend(title='Segment', loc='upper right')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    
+    os.makedirs(save_path, exist_ok=True)
+    file_path = f"{save_path}/{target_name}_segment_driver_comparison.png"
+    plt.savefig(file_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    logger.info(f"  ✓ Saved to: {file_path}")
+    
+    return file_path
+
+
 # ============================================================================
 # SAVE SHAP RESULTS
 # ============================================================================
 
-def save_shap_results(importance_df, top_drivers, segment_results, target_name='will_purchase', models_path=MODELS_PATH):
+def save_shap_results(importance_df, top_drivers, segment_results, target_name='will_repurchase', 
+                      models_path=MODELS_PATH):
     """
     Save SHAP analysis results.
     """
@@ -405,7 +562,8 @@ def save_shap_results(importance_df, top_drivers, segment_results, target_name='
     
     # Save segment-specific results
     for segment_name, results in segment_results.items():
-        segment_path = f"{models_path}/{target_name}_importance_{segment_name.replace(' ', '_').lower()}.csv"
+        safe_name = segment_name.replace(' ', '_').replace('-', '_').lower()
+        segment_path = f"{models_path}/{target_name}_importance_{safe_name}.csv"
         results['importance'].to_csv(segment_path, index=False)
         logger.info(f"  ✓ Saved {segment_name} importance to: {segment_path}")
     
@@ -416,24 +574,27 @@ def save_shap_results(importance_df, top_drivers, segment_results, target_name='
 # COMPLETE SHAP ANALYSIS PIPELINE
 # ============================================================================
 
-def run_shap_analysis_pipeline(model, X_test, feature_names, user_ids, model_name,
-                               target_name='will_purchase'):
+def run_order_based_shap_analysis(model, X_test, feature_names, user_ids, model_name,
+                                   target_name='will_repurchase', 
+                                   models_path=MODELS_PATH, plots_path=PLOTS_PATH):
     """
-    Run the complete SHAP analysis pipeline.
+    Run the complete SHAP analysis pipeline for order-based model.
     
     Args:
         model: Trained model
-        X_test: Test features DataFrame
+        X_test: Test features (numpy array)
         feature_names: List of feature names
         user_ids: User IDs for test set
         model_name: Name of the model
         target_name: Name of target variable
+        models_path: Path to save model outputs
+        plots_path: Path to save visualizations
         
     Returns:
         dict: SHAP analysis results
     """
     logger.info("="*80)
-    logger.info(f"SHAP ANALYSIS PIPELINE - {target_name.upper()}")
+    logger.info(f"SHAP ANALYSIS PIPELINE - ORDER-BASED MODEL")
     logger.info("="*80)
     
     # Step 1: Calculate SHAP values
@@ -443,28 +604,37 @@ def run_shap_analysis_pipeline(model, X_test, feature_names, user_ids, model_nam
     importance_df, top_drivers = extract_top_drivers(shap_values, feature_names, top_n=20)
     
     # Step 3: Load segmentation and analyze by segment
+    segment_results = {}
+    comparison_df = None
+    pivot_df = None
+    
     try:
         segmentation_df = load_segmentation()
         segment_results = analyze_by_segment(
             shap_values, X_test, feature_names, user_ids, segmentation_df
         )
-        comparison_df, pivot_df = compare_segment_drivers(segment_results)
+        if segment_results:
+            comparison_df, pivot_df = compare_segment_drivers(segment_results)
     except FileNotFoundError as e:
         logger.warning(f"  ⚠️ Segmentation not available: {e}")
-        segment_results = {}
-        comparison_df = None
-        pivot_df = None
     
     # Step 4: Generate plots
     plot_paths = {}
-    plot_paths['summary'] = plot_shap_summary(shap_values, X_test, feature_names, target_name)
-    plot_paths['bar'] = plot_shap_bar(shap_values, feature_names, target_name)
+    plot_paths['summary'] = plot_shap_summary(shap_values, X_test, feature_names, target_name, plots_path)
+    plot_paths['bar'] = plot_shap_bar(shap_values, feature_names, target_name, plots_path)
     
     if segment_results:
-        plot_paths['by_segment'] = plot_shap_by_segment(segment_results, target_name)
+        plot_paths['by_segment'] = plot_shap_by_segment(segment_results, target_name, plots_path)
+        plot_paths['segment_comparison'] = plot_segment_driver_comparison(segment_results, target_name, plots_path)
+        
+        # New: Individual SHAP summary plots per segment (beeswarm style)
+        per_segment_paths = plot_shap_summary_per_segment(
+            segment_results, X_test, feature_names, user_ids, segmentation_df, target_name, plots_path
+        )
+        plot_paths['per_segment_summaries'] = per_segment_paths
     
     # Step 5: Save results
-    save_shap_results(importance_df, top_drivers, segment_results, target_name)
+    save_shap_results(importance_df, top_drivers, segment_results, target_name, models_path)
     
     logger.info("\n" + "="*80)
     logger.info("✓ SHAP ANALYSIS COMPLETE")
@@ -477,6 +647,7 @@ def run_shap_analysis_pipeline(model, X_test, feature_names, user_ids, model_nam
         'top_drivers': top_drivers,
         'segment_results': segment_results,
         'comparison_df': comparison_df,
+        'pivot_df': pivot_df,
         'plot_paths': plot_paths
     }
 
@@ -486,6 +657,6 @@ def run_shap_analysis_pipeline(model, X_test, feature_names, user_ids, model_nam
 # ============================================================================
 
 if __name__ == "__main__":
-    print("SHAP Analysis module loaded successfully.")
-    print("Use run_shap_analysis_pipeline() after training models.")
+    print("Order-Based SHAP Analysis module loaded successfully.")
+    print("Use run_order_based_shap_analysis() after training models.")
     print("Requires: model, X_test, feature_names, user_ids, model_name")

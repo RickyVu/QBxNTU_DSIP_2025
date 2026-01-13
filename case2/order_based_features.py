@@ -26,8 +26,13 @@ OUTPUT_DIR = "outputs/order_based"
 # DATA LOADING
 # ============================================================================
 
-def load_and_clean_orders(data_path=DATA_PATH):
-    """Load and clean orders dataset."""
+def load_and_clean_orders(data_path=DATA_PATH, singapore_only=True):
+    """Load and clean orders dataset.
+    
+    Args:
+        data_path: Path to data directory
+        singapore_only: If True, filter to Singapore orders only (currency=SGD)
+    """
     logger.info("Loading and cleaning orders data...")
     
     orders = pd.read_csv(f"{data_path}/orders.csv")
@@ -44,6 +49,13 @@ def load_and_clean_orders(data_path=DATA_PATH):
     orders = orders.dropna(subset=["date_placed", "user_id"])
     
     logger.info(f"✓ Cleaned orders: {len(orders):,} rows")
+    
+    # Filter to Singapore orders only (using currency column)
+    if singapore_only:
+        orders_before = len(orders)
+        orders = orders[orders['currency'] == 'SGD']
+        logger.info(f"✓ Filtered to Singapore (SGD): {len(orders):,} rows (removed {orders_before - len(orders):,})")
+    
     logger.info(f"  Date range: {orders['date_placed'].min().date()} to {orders['date_placed'].max().date()}")
     logger.info(f"  Unique users: {orders['user_id'].nunique():,}")
     
@@ -717,7 +729,7 @@ def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_D
     logger.info("\n" + "="*80)
     logger.info("STEP 5: QUANTILE-BASED TRAIN/TEST SPLIT")
     logger.info("="*80)
-    train_df, test_df = quantile_train_test_split(features_df, test_quantile=0.8)
+    train_df, test_df = quantile_train_test_split(features_df, test_quantile=0.80)
     
     # Step 6: Save features
     logger.info("\n" + "="*80)
