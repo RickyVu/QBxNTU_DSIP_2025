@@ -1,6 +1,6 @@
 # ---
-# Main Pipeline for Order-Based Model
-# Orchestrates: Feature Engineering → Model Training → Evaluation → SHAP → Visualization
+# Main Pipeline for Repurchase Prediction Model
+# Orchestrates: Feature Engineering → Model Training → Evaluation → SHAP → User Aggregation → Visualization
 # ---
 
 import pandas as pd
@@ -12,21 +12,21 @@ import json
 from datetime import datetime
 
 # Setup logging
-os.makedirs('outputs/order_based', exist_ok=True)
+os.makedirs('outputs/repurchase', exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('outputs/order_based/pipeline.log', mode='w')
+        logging.FileHandler('outputs/repurchase/pipeline.log', mode='w')
     ]
 )
 logger = logging.getLogger(__name__)
 
 # Import modules
-from order_based_features import run_order_based_feature_engineering
-from order_based_revenue_impact import run_revenue_impact_analysis
-from order_based_model import (
+from repurchase_features import run_repurchase_feature_engineering
+from repurchase_revenue_impact import run_revenue_impact_analysis
+from repurchase_model import (
     load_train_test_data,
     prepare_features,
     train_all_models,
@@ -36,11 +36,12 @@ from order_based_model import (
     save_model_artifacts,
     save_comparison_results
 )
-from order_based_visualizations import (
+from repurchase_visualizations import (
     generate_all_evaluation_plots,
     generate_segment_plots
 )
-from order_based_shap_analysis import run_order_based_shap_analysis
+from repurchase_shap_analysis import run_repurchase_shap_analysis
+from repurchase_user_aggregation import run_user_shap_analysis
 
 # ============================================================================
 # CONFIGURATION
@@ -48,9 +49,9 @@ from order_based_shap_analysis import run_order_based_shap_analysis
 RANDOM_STATE = 42
 TARGET_NAME = 'will_repurchase'
 CLUSTER_PATH = "../cluster01/sg_user.csv"
-OUTPUT_DIR = "outputs/order_based"
-MODELS_PATH = "outputs/order_based/models"
-PLOTS_PATH = "outputs/order_based/visualizations"
+OUTPUT_DIR = "outputs/repurchase"
+MODELS_PATH = "outputs/repurchase/models"
+PLOTS_PATH = "outputs/repurchase/visualizations"
 
 # ============================================================================
 # PIPELINE STEPS
@@ -64,7 +65,7 @@ def step_1_feature_engineering(prediction_weeks=12):
     logger.info("STEP 1: FEATURE ENGINEERING")
     logger.info("="*80)
     
-    features_df, train_df, test_df = run_order_based_feature_engineering(
+    features_df, train_df, test_df = run_repurchase_feature_engineering(
         prediction_weeks=prediction_weeks,
         output_dir=OUTPUT_DIR
     )
@@ -135,7 +136,7 @@ def step_3_model_evaluation(training_results, force_model=None):
     # Evaluate all models and store predictions for curves
     results = {}
     for model_name, model_info in trained_models.items():
-        from order_based_model import evaluate_model
+        from repurchase_model import evaluate_model
         metrics = evaluate_model(
             model_info['model'], 
             X_test, 
@@ -203,41 +204,68 @@ def step_3_model_evaluation(training_results, force_model=None):
     }
 
 
-def step_4_shap_analysis(training_results, evaluation_results):
+def step_4a_shap_analysis(training_results, evaluation_results):
     """
-    Step 4: Run SHAP analysis on best model.
+    Step 4a: Run order-level SHAP analysis on best model.
     """
     logger.info("\n" + "="*80)
-    logger.info("STEP 4: SHAP ANALYSIS")
+    logger.info("STEP 4a: SHAP ANALYSIS (ORDER-LEVEL)")
     logger.info("="*80)
-    
+
     best_model = evaluation_results['best_model']
     best_model_name = evaluation_results['best_model_name']
     best_scaler = evaluation_results['best_scaler']
-    
+
     X_test = training_results['X_test']
     feature_names = training_results['feature_names']
     user_ids = training_results['user_ids_test']
-    
+
     # Scale if needed
     if best_scaler is not None:
         X_test_for_shap = best_scaler.transform(X_test)
     else:
         X_test_for_shap = X_test
-    
-    # Run SHAP analysis
-    shap_results = run_order_based_shap_analysis(
-        best_model, 
-        X_test_for_shap, 
-        feature_names, 
-        user_ids, 
+
+    # Run order-level SHAP analysis
+    shap_results = run_repurchase_shap_analysis(
+        best_model,
+        X_test_for_shap,
+        feature_names,
+        user_ids,
         best_model_name,
         target_name=TARGET_NAME,
         models_path=MODELS_PATH,
         plots_path=PLOTS_PATH
     )
-    
+
     return shap_results
+
+
+def step_4b_user_shap_analysis(training_results, shap_results):
+    """
+    Step 4b: Aggregate order-level SHAP to user-level.
+    Uses most recent order per user.
+    """
+    logger.info("\n" + "="*80)
+    logger.info("STEP 4b: USER-LEVEL SHAP AGGREGATION")
+    logger.info("="*80)
+
+    X_test = training_results['X_test']
+    user_ids = training_results['user_ids_test']
+    test_df = training_results['test_df']
+
+    # Run user-level SHAP analysis
+    user_shap_results = run_user_shap_analysis(
+        order_shap_results=shap_results,
+        X_test=X_test,
+        user_ids=user_ids,
+        test_df=test_df,
+        segmentation_df=None,  # Will load from CLUSTER_PATH
+        target_name=TARGET_NAME,
+        plots_path=PLOTS_PATH
+    )
+
+    return user_shap_results
 
 
 def step_5_visualizations(training_results, evaluation_results):
@@ -396,7 +424,7 @@ def step_7_business_insights(evaluation_results, shap_results):
 
 def run_complete_pipeline(skip_feature_engineering=False, prediction_weeks=12, force_model=None):
     """
-    Run the complete order-based model pipeline.
+    Run the complete repurchase prediction model pipeline.
     
     Args:
         skip_feature_engineering: If True, skip step 1 (use existing features)
@@ -411,7 +439,7 @@ def run_complete_pipeline(skip_feature_engineering=False, prediction_weeks=12, f
     start_time = datetime.now()
     
     logger.info("="*80)
-    logger.info("ORDER-BASED MODEL - COMPLETE PIPELINE")
+    logger.info("REPURCHASE PREDICTION MODEL - COMPLETE PIPELINE")
     logger.info("="*80)
     logger.info(f"Target: Will customer repurchase within {prediction_weeks} weeks?")
     if force_model:
@@ -439,15 +467,18 @@ def run_complete_pipeline(skip_feature_engineering=False, prediction_weeks=12, f
     # Step 3: Model Evaluation (with optional forced model selection)
     evaluation_results = step_3_model_evaluation(training_results, force_model=force_model)
     
-    # Step 4: SHAP Analysis
-    shap_results = step_4_shap_analysis(training_results, evaluation_results)
-    
+    # Step 4a: Order-Level SHAP Analysis
+    shap_results = step_4a_shap_analysis(training_results, evaluation_results)
+
+    # Step 4b: User-Level SHAP Aggregation
+    user_shap_results = step_4b_user_shap_analysis(training_results, shap_results)
+
     # Step 5: Visualizations
     plot_paths = step_5_visualizations(training_results, evaluation_results)
-    
+
     # Step 6: Revenue Impact Analysis
     revenue_results = step_6_revenue_impact_analysis(training_results, evaluation_results)
-    
+
     # Step 7: Business Insights
     insights = step_7_business_insights(evaluation_results, shap_results)
     
@@ -475,6 +506,7 @@ def run_complete_pipeline(skip_feature_engineering=False, prediction_weeks=12, f
         'training_results': training_results,
         'evaluation_results': evaluation_results,
         'shap_results': shap_results,
+        'user_shap_results': user_shap_results,
         'plot_paths': plot_paths,
         'revenue_results': revenue_results,
         'insights': insights
@@ -499,9 +531,9 @@ if __name__ == "__main__":
     #   results = run_complete_pipeline(skip_feature_engineering=True, force_model='XGBoost')
     
     results = run_complete_pipeline(
-        skip_feature_engineering=True,  # Set to True to skip if features already exist
+        skip_feature_engineering=False,  # Set to True to skip if features already exist
         prediction_weeks=12,
-        force_model='Random Forest'  # Set to 'LogisticRegression', 'RandomForest', 'XGBoost', or 'LightGBM' to force a specific model
+        force_model=None  # Set to 'LogisticRegression', 'RandomForest', 'XGBoost', or 'LightGBM' to force a specific model
     )
     
     print("\n" + "="*80)

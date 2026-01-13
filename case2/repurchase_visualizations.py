@@ -1,5 +1,5 @@
 # ---
-# Visualization Functions for Order-Based Model
+# Visualization Functions for Repurchase Model
 # Model evaluation plots and segment analysis
 # ---
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-PLOTS_PATH = "outputs/order_based/visualizations"
+PLOTS_PATH = "outputs/repurchase/visualizations"
 FIGSIZE_STANDARD = (10, 8)
 FIGSIZE_WIDE = (14, 6)
 FIGSIZE_GRID = (16, 12)
@@ -74,7 +74,7 @@ def plot_roc_curves(results, target_name='will_repurchase', save_path=PLOTS_PATH
     ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('False Positive Rate', fontsize=12)
     ax.set_ylabel('True Positive Rate', fontsize=12)
-    ax.set_title('ROC Curves - Order-Based Model Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('ROC Curves - Repurchase Model (Order-Level) Comparison', fontsize=14, fontweight='bold')
     ax.legend(loc='lower right', fontsize=10)
     ax.grid(True, alpha=0.3)
     
@@ -117,7 +117,7 @@ def plot_pr_curves(results, target_name='will_repurchase', save_path=PLOTS_PATH)
     ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('Recall', fontsize=12)
     ax.set_ylabel('Precision', fontsize=12)
-    ax.set_title('Precision-Recall Curves - Order-Based Model Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('Precision-Recall Curves - Repurchase Model (Order-Level) Comparison', fontsize=14, fontweight='bold')
     ax.legend(loc='upper right', fontsize=10)
     ax.grid(True, alpha=0.3)
     
@@ -166,7 +166,7 @@ def plot_metric_comparison(comparison_df, target_name='will_repurchase', save_pa
         multiplier += 1
     
     ax.set_ylabel('Score', fontsize=12)
-    ax.set_title('Order-Based Model Performance Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('Repurchase Model (Order-Level) Performance Comparison', fontsize=14, fontweight='bold')
     ax.set_xticks(x + width * 2.5)
     ax.set_xticklabels(comparison_df['Model'], fontsize=10)
     ax.legend(loc='lower right', ncol=2, fontsize=9)

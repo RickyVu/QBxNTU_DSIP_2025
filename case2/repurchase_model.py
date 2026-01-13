@@ -1,5 +1,5 @@
 # ---
-# Order-Based Model Training
+# Repurchase Model Training
 # Trains models on order-based features (post-purchase repurchase prediction)
 # ---
 
@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-TRAIN_PATH = "outputs/order_based/order_based_train.csv"
-TEST_PATH = "outputs/order_based/order_based_test.csv"
-OUTPUT_DIR = "outputs/order_based/models"
+TRAIN_PATH = "outputs/repurchase/repurchase_train.csv"
+TEST_PATH = "outputs/repurchase/repurchase_test.csv"
+OUTPUT_DIR = "outputs/repurchase/models"
 RANDOM_STATE = 42
 
 # ============================================================================
@@ -384,13 +384,13 @@ def save_model_artifacts(best_model_name, best_model_info, best_metrics,
     os.makedirs(output_dir, exist_ok=True)
     
     # Save model
-    model_path = f"{output_dir}/order_based_best_model.pkl"
+    model_path = f"{output_dir}/repurchase_best_model.pkl"
     joblib.dump(best_model_info['model'], model_path)
     logger.info(f"  ✓ Saved model to: {model_path}")
     
     # Save scaler if needed
     if best_model_info['scaler'] is not None:
-        scaler_path = f"{output_dir}/order_based_scaler.pkl"
+        scaler_path = f"{output_dir}/repurchase_scaler.pkl"
         joblib.dump(best_model_info['scaler'], scaler_path)
         logger.info(f"  ✓ Saved scaler to: {scaler_path}")
     
@@ -399,7 +399,7 @@ def save_model_artifacts(best_model_name, best_model_info, best_metrics,
         'model_name': best_model_name,
         'requires_scaling': best_model_info['requires_scaling'],
         'feature_names': feature_names,
-        'approach': 'order_based',
+        'approach': 'repurchase',
         'description': 'Post-purchase repurchase prediction (one entry per order)',
         'metrics': {
             'accuracy': float(best_metrics['accuracy']),
@@ -416,7 +416,7 @@ def save_model_artifacts(best_model_name, best_model_info, best_metrics,
         'created_at': datetime.now().isoformat()
     }
     
-    metadata_path = f"{output_dir}/order_based_metadata.json"
+    metadata_path = f"{output_dir}/repurchase_metadata.json"
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     logger.info(f"  ✓ Saved metadata to: {metadata_path}")
@@ -430,7 +430,7 @@ def save_comparison_results(comparison_df, results, output_dir=OUTPUT_DIR):
     """Save model comparison results."""
     
     # Save comparison table
-    comparison_path = f"{output_dir}/order_based_model_comparison.csv"
+    comparison_path = f"{output_dir}/repurchase_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
     logger.info(f"  ✓ Saved comparison table to: {comparison_path}")
     
@@ -450,7 +450,7 @@ def save_comparison_results(comparison_df, results, output_dir=OUTPUT_DIR):
             'true_positives': metrics['true_positives']
         }
     
-    results_path = f"{output_dir}/order_based_all_results.json"
+    results_path = f"{output_dir}/repurchase_all_results.json"
     with open(results_path, 'w') as f:
         json.dump(results_serializable, f, indent=2)
     logger.info(f"  ✓ Saved full results to: {results_path}")
@@ -468,7 +468,7 @@ def run_order_based_training_pipeline():
         dict: Pipeline results including best model and metrics
     """
     logger.info("="*80)
-    logger.info("ORDER-BASED MODEL TRAINING PIPELINE")
+    logger.info("REPURCHASE MODEL TRAINING PIPELINE")
     logger.info("="*80)
     logger.info("Approach: Post-purchase repurchase prediction")
     logger.info("Question: Given a user just ordered, will they order again in 12 weeks?")
@@ -515,7 +515,7 @@ def run_order_based_training_pipeline():
     save_comparison_results(comparison_df, results)
     
     logger.info("\n" + "="*80)
-    logger.info("✓ ORDER-BASED MODEL TRAINING PIPELINE COMPLETE")
+    logger.info("✓ REPURCHASE MODEL TRAINING PIPELINE COMPLETE")
     logger.info("="*80)
     
     return {

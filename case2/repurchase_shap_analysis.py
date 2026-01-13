@@ -1,5 +1,5 @@
 # ---
-# SHAP Analysis for Order-Based Model
+# SHAP Analysis for Repurchase Model (Order-Level)
 # Segment-specific analysis using Case 1 clusters
 # ---
 
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-MODELS_PATH = "outputs/order_based/models"
-PLOTS_PATH = "outputs/order_based/visualizations"
+MODELS_PATH = "outputs/repurchase/models"
+PLOTS_PATH = "outputs/repurchase/visualizations"
 CLUSTER_PATH = "../cluster01/sg_user.csv"
 
 # Segment names from Case 1
@@ -303,7 +303,7 @@ def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_repu
     shap.summary_plot(shap_values, X_test, feature_names=feature_names, 
                      show=False, max_display=20)
     
-    plt.title('SHAP Feature Importance - Order-Based Model', fontsize=14, fontweight='bold')
+    plt.title(f'SHAP Feature Importance - Order Level (n={len(X_test):,} orders)', fontsize=14, fontweight='bold')
     plt.tight_layout()
     
     os.makedirs(save_path, exist_ok=True)
@@ -335,7 +335,7 @@ def plot_shap_bar(shap_values, feature_names, target_name='will_repurchase', sav
     plt.barh(range(len(top_features)), top_values[::-1], color=colors[::-1])
     plt.yticks(range(len(top_features)), top_features[::-1])
     plt.xlabel('Mean |SHAP Value|', fontsize=12)
-    plt.title('Top 20 Feature Importance (SHAP) - Order-Based Model', fontsize=14, fontweight='bold')
+    plt.title(f'Top 20 Feature Importance (SHAP) - Order Level (n={len(shap_values):,} orders)', fontsize=14, fontweight='bold')
     plt.grid(True, alpha=0.3, axis='x')
     plt.tight_layout()
     
@@ -395,7 +395,7 @@ def plot_shap_by_segment(segment_results, target_name='will_repurchase', save_pa
     plt.figure(figsize=(12, 10))
     sns.heatmap(pivot_df, annot=True, fmt='.3f', cmap='YlOrRd', 
                 cbar_kws={'label': 'Mean |SHAP Value|'})
-    plt.title('Feature Importance by Segment - Order-Based Model', fontsize=14, fontweight='bold')
+    plt.title('Feature Importance by Segment - Order Level', fontsize=14, fontweight='bold')
     plt.xlabel('Customer Segment', fontsize=12)
     plt.ylabel('Feature', fontsize=12)
     plt.tight_layout()
@@ -574,7 +574,7 @@ def save_shap_results(importance_df, top_drivers, segment_results, target_name='
 # COMPLETE SHAP ANALYSIS PIPELINE
 # ============================================================================
 
-def run_order_based_shap_analysis(model, X_test, feature_names, user_ids, model_name,
+def run_repurchase_shap_analysis(model, X_test, feature_names, user_ids, model_name,
                                    target_name='will_repurchase', 
                                    models_path=MODELS_PATH, plots_path=PLOTS_PATH):
     """
@@ -594,7 +594,7 @@ def run_order_based_shap_analysis(model, X_test, feature_names, user_ids, model_
         dict: SHAP analysis results
     """
     logger.info("="*80)
-    logger.info(f"SHAP ANALYSIS PIPELINE - ORDER-BASED MODEL")
+    logger.info(f"SHAP ANALYSIS PIPELINE - REPURCHASE MODEL (ORDER-LEVEL)")
     logger.info("="*80)
     
     # Step 1: Calculate SHAP values
@@ -657,6 +657,6 @@ def run_order_based_shap_analysis(model, X_test, feature_names, user_ids, model_
 # ============================================================================
 
 if __name__ == "__main__":
-    print("Order-Based SHAP Analysis module loaded successfully.")
-    print("Use run_order_based_shap_analysis() after training models.")
+    print("Repurchase SHAP Analysis (Order-Level) module loaded successfully.")
+    print("Use run_repurchase_shap_analysis() after training models.")
     print("Requires: model, X_test, feature_names, user_ids, model_name")

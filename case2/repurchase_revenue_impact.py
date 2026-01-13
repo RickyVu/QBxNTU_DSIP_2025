@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-OUTPUT_DIR = "outputs/order_based"
+OUTPUT_DIR = "outputs/repurchase"
 CLUSTER_PATH = "../cluster01/sg_user.csv"
 
 # Segment names mapping
@@ -611,16 +611,16 @@ if __name__ == "__main__":
     print("="*80)
     
     # Load test data
-    test_df = pd.read_csv(f"{OUTPUT_DIR}/order_based_test.csv")
+    test_df = pd.read_csv(f"{OUTPUT_DIR}/repurchase_test.csv")
     print(f"✓ Loaded test data: {len(test_df):,} orders")
     
     # Load model and get predictions
-    model_path = f"{OUTPUT_DIR}/models/order_based_best_model.pkl"
+    model_path = f"{OUTPUT_DIR}/models/repurchase_best_model.pkl"
     model = joblib.load(model_path)
     print(f"✓ Loaded model from: {model_path}")
     
     # Prepare features
-    from order_based_model import prepare_features
+    from repurchase_model import prepare_features
     X_test, y_test, feature_names = prepare_features(test_df)
     
     # Get propensity scores
@@ -635,4 +635,4 @@ if __name__ == "__main__":
         output_dir=OUTPUT_DIR
     )
     
-    print("\n✓ Analysis complete! Check outputs/order_based/revenue_impact/")
+    print("\n✓ Analysis complete! Check outputs/repurchase/revenue_impact/")

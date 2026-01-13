@@ -1,5 +1,5 @@
 # ---
-# Order-Based Feature Engineering
+# Repurchase Feature Engineering
 # Creates one entry per order, predicting if user will purchase again within 12 weeks
 # This answers: "Given a user just made a purchase, will they purchase again?"
 # ---
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 DATA_PATH = "../original_data"
 PREDICTION_WINDOW_WEEKS = 12  # 12-week lookforward
-OUTPUT_DIR = "outputs/order_based"
+OUTPUT_DIR = "outputs/repurchase"
 
 # ============================================================================
 # DATA LOADING
@@ -662,7 +662,7 @@ def quantile_train_test_split(df, test_quantile=0.8):
 # MAIN PIPELINE
 # ============================================================================
 
-def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_DIR):
+def run_repurchase_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_DIR):
     """
     Run the complete order-based feature engineering pipeline.
     
@@ -674,7 +674,7 @@ def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_D
         pd.DataFrame: Complete order-based feature dataset
     """
     logger.info("="*80)
-    logger.info("ORDER-BASED FEATURE ENGINEERING")
+    logger.info("REPURCHASE FEATURE ENGINEERING (ORDER-LEVEL)")
     logger.info("="*80)
     logger.info(f"Prediction window: {prediction_weeks} weeks")
     logger.info("Approach: One entry per order, predicting repurchase")
@@ -736,15 +736,15 @@ def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_D
     logger.info("STEP 6: SAVING FEATURES")
     logger.info("="*80)
     
-    output_path = f"{output_dir}/order_based_features.csv"
+    output_path = f"{output_dir}/repurchase_features.csv"
     features_df.to_csv(output_path, index=False)
     
     logger.info(f"✓ Saved to: {output_path}")
     logger.info(f"  File size: {os.path.getsize(output_path) / 1024 / 1024:.2f} MB")
     
     # Save train/test splits
-    train_df.to_csv(f"{output_dir}/order_based_train.csv", index=False)
-    test_df.to_csv(f"{output_dir}/order_based_test.csv", index=False)
+    train_df.to_csv(f"{output_dir}/repurchase_train.csv", index=False)
+    test_df.to_csv(f"{output_dir}/repurchase_test.csv", index=False)
     logger.info(f"✓ Saved train/test splits")
     
     # Print summary statistics
@@ -794,7 +794,7 @@ def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_D
         logger.info(f"  Repurchase rate: {repeat['repurchase_rate']:.1%}")
     
     logger.info("\n" + "="*80)
-    logger.info("✓ ORDER-BASED FEATURE ENGINEERING COMPLETE")
+    logger.info("✓ REPURCHASE FEATURE ENGINEERING (ORDER-LEVEL) COMPLETE")
     logger.info("="*80)
     
     return features_df, train_df, test_df
@@ -806,9 +806,9 @@ def run_order_based_feature_engineering(prediction_weeks=12, output_dir=OUTPUT_D
 
 if __name__ == "__main__":
     # Run the pipeline
-    features_df, train_df, test_df = run_order_based_feature_engineering(
+    features_df, train_df, test_df = run_repurchase_feature_engineering(
         prediction_weeks=12,
-        output_dir='outputs/order_based'
+        output_dir='outputs/repurchase'
     )
     
     print("\n" + "="*80)
