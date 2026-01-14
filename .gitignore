@@ -2,3 +2,9 @@
 original_data
 feature_data
 cluster01
+*.log
+*.csv
+*.json
+*.pkl
+case2/outputs
+case2/__pycache__

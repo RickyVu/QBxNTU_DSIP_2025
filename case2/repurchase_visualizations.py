@@ -1,13 +1,21 @@
 # ---
-# Visualization Functions for Case 2: Propensity Prediction
+# Visualization Functions for Repurchase Model
+# Model evaluation plots and segment analysis
 # ---
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 import seaborn as sns
 import os
 import logging
+from sklearn.metrics import roc_curve, precision_recall_curve
+
+# Suppress specific seaborn warnings
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning, module='seaborn')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-PLOTS_PATH = "outputs/plots"
+PLOTS_PATH = "outputs/repurchase/visualizations"
 FIGSIZE_STANDARD = (10, 8)
 FIGSIZE_WIDE = (14, 6)
 FIGSIZE_GRID = (16, 12)
@@ -25,16 +33,24 @@ FIGSIZE_GRID = (16, 12)
 plt.style.use('seaborn-v0_8-whitegrid')
 sns.set_palette("husl")
 
+# Segment names from Case 1
+SEGMENT_NAMES = {
+    0: 'Casual Walk-in',
+    1: 'Golden Whales',
+    2: 'High Potential',
+    3: 'Drifting Risk'
+}
+
 # ============================================================================
 # MODEL EVALUATION PLOTS
 # ============================================================================
 
-def plot_roc_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_roc_curves(results, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot ROC curves for all models on one plot.
     
     Args:
-        results: Dictionary of evaluation results with roc_curve data
+        results: Dictionary of evaluation results with y_test and y_proba
         target_name: Name of target variable
         save_path: Path to save plot
     """
@@ -45,12 +61,11 @@ def plot_roc_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
     colors = plt.cm.Set1(np.linspace(0, 1, len(results)))
     
     for (model_name, metrics), color in zip(results.items(), colors):
-        fpr = metrics['roc_curve']['fpr']
-        tpr = metrics['roc_curve']['tpr']
-        auc = metrics['roc_auc']
-        
-        ax.plot(fpr, tpr, color=color, lw=2, 
-                label=f'{model_name} (AUC = {auc:.4f})')
+        if 'y_test' in metrics and 'y_proba' in metrics:
+            fpr, tpr, _ = roc_curve(metrics['y_test'], metrics['y_proba'])
+            auc = metrics['roc_auc']
+            ax.plot(fpr, tpr, color=color, lw=2, 
+                    label=f'{model_name} (AUC = {auc:.4f})')
     
     # Diagonal line (random classifier)
     ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Random (AUC = 0.5)')
@@ -59,7 +74,7 @@ def plot_roc_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
     ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('False Positive Rate', fontsize=12)
     ax.set_ylabel('True Positive Rate', fontsize=12)
-    ax.set_title('ROC Curves - Model Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('ROC Curves - Repurchase Model (Order-Level) Comparison', fontsize=14, fontweight='bold')
     ax.legend(loc='lower right', fontsize=10)
     ax.grid(True, alpha=0.3)
     
@@ -76,12 +91,12 @@ def plot_roc_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
     return file_path
 
 
-def plot_pr_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_pr_curves(results, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot Precision-Recall curves for all models on one plot.
     
     Args:
-        results: Dictionary of evaluation results with pr_curve data
+        results: Dictionary of evaluation results with y_test and y_proba
         target_name: Name of target variable
         save_path: Path to save plot
     """
@@ -92,18 +107,17 @@ def plot_pr_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
     colors = plt.cm.Set1(np.linspace(0, 1, len(results)))
     
     for (model_name, metrics), color in zip(results.items(), colors):
-        precision = metrics['pr_curve']['precision']
-        recall = metrics['pr_curve']['recall']
-        pr_auc = metrics['pr_auc']
-        
-        ax.plot(recall, precision, color=color, lw=2,
-                label=f'{model_name} (PR-AUC = {pr_auc:.4f})')
+        if 'y_test' in metrics and 'y_proba' in metrics:
+            precision, recall, _ = precision_recall_curve(metrics['y_test'], metrics['y_proba'])
+            pr_auc = metrics['pr_auc']
+            ax.plot(recall, precision, color=color, lw=2,
+                    label=f'{model_name} (PR-AUC = {pr_auc:.4f})')
     
     ax.set_xlim([0.0, 1.0])
     ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('Recall', fontsize=12)
     ax.set_ylabel('Precision', fontsize=12)
-    ax.set_title('Precision-Recall Curves - Model Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('Precision-Recall Curves - Repurchase Model (Order-Level) Comparison', fontsize=14, fontweight='bold')
     ax.legend(loc='upper right', fontsize=10)
     ax.grid(True, alpha=0.3)
     
@@ -120,9 +134,9 @@ def plot_pr_curves(results, target_name='will_purchase', save_path=PLOTS_PATH):
     return file_path
 
 
-def plot_metric_comparison(comparison_df, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_metric_comparison(comparison_df, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
-    Plot bar chart comparing all 6 metrics across models.
+    Plot bar chart comparing all metrics across models.
     
     Args:
         comparison_df: DataFrame with model comparison metrics
@@ -132,8 +146,10 @@ def plot_metric_comparison(comparison_df, target_name='will_purchase', save_path
     logger.info("Creating metric comparison plot...")
     
     # Prepare data for plotting
-    metrics_to_plot = ['Test Accuracy', 'Test Precision', 'Test Recall', 
-                       'Test F1', 'Test ROC-AUC', 'Test PR-AUC']
+    metrics_to_plot = ['Accuracy', 'Precision', 'Recall', 'F1', 'ROC-AUC', 'PR-AUC']
+    
+    # Filter to only existing columns
+    metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
     
     fig, ax = plt.subplots(figsize=FIGSIZE_WIDE)
     
@@ -146,11 +162,11 @@ def plot_metric_comparison(comparison_df, target_name='will_purchase', save_path
     for metric, color in zip(metrics_to_plot, colors):
         offset = width * multiplier
         bars = ax.bar(x + offset, comparison_df[metric], width, 
-                     label=metric.replace('Test ', ''), color=color)
+                     label=metric, color=color)
         multiplier += 1
     
     ax.set_ylabel('Score', fontsize=12)
-    ax.set_title('Model Performance Comparison', fontsize=14, fontweight='bold')
+    ax.set_title('Repurchase Model (Order-Level) Performance Comparison', fontsize=14, fontweight='bold')
     ax.set_xticks(x + width * 2.5)
     ax.set_xticklabels(comparison_df['Model'], fontsize=10)
     ax.legend(loc='lower right', ncol=2, fontsize=9)
@@ -174,7 +190,7 @@ def plot_metric_comparison(comparison_df, target_name='will_purchase', save_path
     return file_path
 
 
-def plot_confusion_matrix(confusion_matrix, model_name, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_confusion_matrix(confusion_matrix, model_name, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot confusion matrix heatmap for best model.
     
@@ -190,8 +206,8 @@ def plot_confusion_matrix(confusion_matrix, model_name, target_name='will_purcha
     
     # Create heatmap
     sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues',
-                xticklabels=['Predicted 0', 'Predicted 1'],
-                yticklabels=['Actual 0', 'Actual 1'],
+                xticklabels=['Predicted: No', 'Predicted: Yes'],
+                yticklabels=['Actual: No', 'Actual: Yes'],
                 ax=ax, annot_kws={'size': 14})
     
     ax.set_title(f'Confusion Matrix - {model_name}', fontsize=14, fontweight='bold')
@@ -215,7 +231,7 @@ def plot_confusion_matrix(confusion_matrix, model_name, target_name='will_purcha
 # SEGMENT × PROPENSITY VISUALIZATIONS
 # ============================================================================
 
-def plot_segment_propensity_boxplot(propensity_df, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_segment_propensity_boxplot(propensity_df, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot box plot of propensity scores by segment.
     
@@ -228,23 +244,30 @@ def plot_segment_propensity_boxplot(propensity_df, target_name='will_purchase', 
     
     fig, ax = plt.subplots(figsize=FIGSIZE_STANDARD)
     
-    # Define segment names
-    segment_names = {
-        0: 'Casual Walk-in',
-        1: 'Golden Whales',
-        2: 'High Potential',
-        3: 'Drifting Risk'
-    }
+    propensity_df = propensity_df.copy()
+    propensity_df['segment_name'] = propensity_df['value_cluster'].map(SEGMENT_NAMES)
     
-    propensity_df['segment_name'] = propensity_df['value_cluster'].map(segment_names)
+    # Order segments - show all 4, even if some are empty
+    order = ['Casual Walk-in', 'Golden Whales', 'High Potential', 'Drifting Risk']
+    
+    # Add missing segments with NaN values so they show up in plot
+    for segment in order:
+        if segment not in propensity_df['segment_name'].values:
+            # Add a single dummy row with NaN propensity
+            dummy_row = pd.DataFrame({
+                'segment_name': [segment],
+                'propensity_score': [np.nan],
+                'value_cluster': [[k for k, v in SEGMENT_NAMES.items() if v == segment][0]]
+            })
+            propensity_df = pd.concat([propensity_df, dummy_row], ignore_index=True)
     
     # Create box plot
     sns.boxplot(data=propensity_df, x='segment_name', y='propensity_score',
-                palette='Set2', ax=ax)
+                palette='Set2', ax=ax, order=order)
     
     ax.set_xlabel('Customer Segment (Case 1)', fontsize=12)
-    ax.set_ylabel('Propensity Score', fontsize=12)
-    ax.set_title('Propensity Score Distribution by Segment', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Repurchase Propensity Score', fontsize=12)
+    ax.set_title('Repurchase Propensity Distribution by Segment', fontsize=14, fontweight='bold')
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3, axis='y')
     
@@ -261,7 +284,7 @@ def plot_segment_propensity_boxplot(propensity_df, target_name='will_purchase', 
     return file_path
 
 
-def plot_segment_propensity_violin(propensity_df, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_segment_propensity_violin(propensity_df, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot violin plot of propensity scores by segment.
     
@@ -274,23 +297,30 @@ def plot_segment_propensity_violin(propensity_df, target_name='will_purchase', s
     
     fig, ax = plt.subplots(figsize=FIGSIZE_STANDARD)
     
-    # Define segment names
-    segment_names = {
-        0: 'Casual Walk-in',
-        1: 'Golden Whales',
-        2: 'High Potential',
-        3: 'Drifting Risk'
-    }
+    propensity_df = propensity_df.copy()
+    propensity_df['segment_name'] = propensity_df['value_cluster'].map(SEGMENT_NAMES)
     
-    propensity_df['segment_name'] = propensity_df['value_cluster'].map(segment_names)
+    # Order segments - show all 4, even if some are empty
+    order = ['Casual Walk-in', 'Golden Whales', 'High Potential', 'Drifting Risk']
+    
+    # Add missing segments with NaN values so they show up in plot
+    for segment in order:
+        if segment not in propensity_df['segment_name'].values:
+            # Add a single dummy row with NaN propensity
+            dummy_row = pd.DataFrame({
+                'segment_name': [segment],
+                'propensity_score': [np.nan],
+                'value_cluster': [[k for k, v in SEGMENT_NAMES.items() if v == segment][0]]
+            })
+            propensity_df = pd.concat([propensity_df, dummy_row], ignore_index=True)
     
     # Create violin plot
     sns.violinplot(data=propensity_df, x='segment_name', y='propensity_score',
-                   palette='Set2', ax=ax, inner='box')
+                   palette='Set2', ax=ax, inner='box', order=order)
     
     ax.set_xlabel('Customer Segment (Case 1)', fontsize=12)
-    ax.set_ylabel('Propensity Score', fontsize=12)
-    ax.set_title('Propensity Score Density by Segment', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Repurchase Propensity Score', fontsize=12)
+    ax.set_title('Repurchase Propensity Density by Segment', fontsize=14, fontweight='bold')
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3, axis='y')
     
@@ -307,7 +337,7 @@ def plot_segment_propensity_violin(propensity_df, target_name='will_purchase', s
     return file_path
 
 
-def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_segment_propensity_heatmap(propensity_df, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot heatmap of segment × propensity bins.
     
@@ -318,13 +348,7 @@ def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', 
     """
     logger.info("Creating segment × propensity heatmap...")
     
-    # Define segment names
-    segment_names = {
-        0: 'Casual Walk-in',
-        1: 'Golden Whales',
-        2: 'High Potential',
-        3: 'Drifting Risk'
-    }
+    propensity_df = propensity_df.copy()
     
     # Create propensity bins
     propensity_df['propensity_bin'] = pd.cut(
@@ -333,7 +357,7 @@ def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', 
         labels=['Low (0-0.3)', 'Medium (0.3-0.6)', 'High (0.6-1.0)']
     )
     
-    propensity_df['segment_name'] = propensity_df['value_cluster'].map(segment_names)
+    propensity_df['segment_name'] = propensity_df['value_cluster'].map(SEGMENT_NAMES)
     
     # Create cross-tabulation
     cross_tab = pd.crosstab(
@@ -342,9 +366,9 @@ def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', 
         normalize='index'
     ) * 100
     
-    # Reorder rows
+    # Reorder rows - show all 4 segments, fill missing with 0
     row_order = ['Casual Walk-in', 'Golden Whales', 'High Potential', 'Drifting Risk']
-    cross_tab = cross_tab.reindex(row_order)
+    cross_tab = cross_tab.reindex(row_order, fill_value=0)
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -354,7 +378,7 @@ def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', 
     
     ax.set_xlabel('Propensity Level', fontsize=12)
     ax.set_ylabel('Customer Segment', fontsize=12)
-    ax.set_title('Segment × Propensity Distribution (%)', fontsize=14, fontweight='bold')
+    ax.set_title('Segment × Repurchase Propensity Distribution (%)', fontsize=14, fontweight='bold')
     
     plt.tight_layout()
     
@@ -369,7 +393,7 @@ def plot_segment_propensity_heatmap(propensity_df, target_name='will_purchase', 
     return file_path
 
 
-def plot_strategic_matrix(propensity_df, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_strategic_matrix(propensity_df, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Plot strategic matrix showing segment × propensity → marketing action.
     
@@ -380,20 +404,20 @@ def plot_strategic_matrix(propensity_df, target_name='will_purchase', save_path=
     """
     logger.info("Creating strategic matrix...")
     
-    # Define strategic actions
+    # Define strategic actions for repurchase
     strategic_actions = {
-        ('Casual Walk-in', 'Low'): 'Onboarding\nTrial Offers',
-        ('Casual Walk-in', 'Medium'): 'Engagement\nCampaigns',
-        ('Casual Walk-in', 'High'): 'Conversion\nPush',
-        ('Golden Whales', 'Low'): 'URGENT\nWin-back',
+        ('Casual Walk-in', 'Low'): 'Aggressive\nDiscounts',
+        ('Casual Walk-in', 'Medium'): 'Loyalty\nProgram',
+        ('Casual Walk-in', 'High'): 'Cross-sell\nCampaign',
+        ('Golden Whales', 'Low'): 'URGENT\nWin-back VIP',
         ('Golden Whales', 'Medium'): 'VIP\nRetention',
-        ('Golden Whales', 'High'): 'Loyalty\nRewards',
-        ('High Potential', 'Low'): 'Re-engagement\nOffers',
+        ('Golden Whales', 'High'): 'Exclusive\nRewards',
+        ('High Potential', 'Low'): 'Re-activation\nOffer',
         ('High Potential', 'Medium'): 'Subscription\nUpsell',
         ('High Potential', 'High'): 'Accelerate\nto VIP',
-        ('Drifting Risk', 'Low'): 'Win-back\nDiscounts',
-        ('Drifting Risk', 'Medium'): 'Feedback\nSurvey',
-        ('Drifting Risk', 'High'): 'Retention\nCampaign'
+        ('Drifting Risk', 'Low'): 'Win-back\nLast Chance',
+        ('Drifting Risk', 'Medium'): 'Feedback\n+ Incentive',
+        ('Drifting Risk', 'High'): 'Retention\nBonus'
     }
     
     # Define priority colors
@@ -437,9 +461,9 @@ def plot_strategic_matrix(propensity_df, target_name='will_purchase', save_path=
                        'High Propensity\n(0.6-1.0)'], fontsize=10)
     ax.set_yticks([0.5, 1.5, 2.5, 3.5])
     ax.set_yticklabels(segments[::-1], fontsize=10)
-    ax.set_xlabel('Propensity Score', fontsize=12)
+    ax.set_xlabel('Repurchase Propensity Score', fontsize=12)
     ax.set_ylabel('Customer Segment (Case 1)', fontsize=12)
-    ax.set_title('Strategic Marketing Action Matrix', fontsize=14, fontweight='bold')
+    ax.set_title('Strategic Marketing Action Matrix - Repurchase', fontsize=14, fontweight='bold')
     
     # Add legend
     legend_elements = [
@@ -462,93 +486,51 @@ def plot_strategic_matrix(propensity_df, target_name='will_purchase', save_path=
     return file_path
 
 
-# ============================================================================
-# SHAP VISUALIZATIONS (will be populated after SHAP analysis)
-# ============================================================================
-
-def plot_shap_summary(shap_values, X_test, feature_names, target_name='will_purchase', save_path=PLOTS_PATH):
+def plot_propensity_distribution(y_test, y_proba, target_name='will_repurchase', save_path=PLOTS_PATH):
     """
-    Plot SHAP summary plot (beeswarm).
+    Plot distribution of propensity scores by actual class.
+    """
+    logger.info("Creating propensity distribution plot...")
     
-    Args:
-        shap_values: SHAP values array
-        X_test: Test features DataFrame
-        feature_names: List of feature names
-        target_name: Name of target variable
-        save_path: Path to save plot
-    """
-    try:
-        import shap
-        
-        logger.info("Creating SHAP summary plot...")
-        
-        fig, ax = plt.subplots(figsize=(12, 10))
-        
-        shap.summary_plot(shap_values, X_test, feature_names=feature_names, 
-                         show=False, max_display=20)
-        
-        plt.title('SHAP Feature Importance', fontsize=14, fontweight='bold')
-        plt.tight_layout()
-        
-        # Save plot
-        os.makedirs(save_path, exist_ok=True)
-        file_path = f"{save_path}/{target_name}_shap_summary.png"
-        plt.savefig(file_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        logger.info(f"  ✓ Saved SHAP summary to: {file_path}")
-        
-        return file_path
-    except ImportError:
-        logger.warning("  ⚠️ SHAP not installed. Skipping SHAP summary plot.")
-        return None
-
-
-def plot_shap_bar(shap_values, feature_names, target_name='will_purchase', save_path=PLOTS_PATH):
-    """
-    Plot SHAP bar plot (mean absolute values).
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
-    Args:
-        shap_values: SHAP values array
-        feature_names: List of feature names
-        target_name: Name of target variable
-        save_path: Path to save plot
-    """
-    try:
-        import shap
-        
-        logger.info("Creating SHAP bar plot...")
-        
-        # Calculate mean absolute SHAP values
-        mean_abs_shap = np.abs(shap_values).mean(axis=0)
-        
-        # Create DataFrame for plotting
-        shap_df = pd.DataFrame({
-            'feature': feature_names,
-            'importance': mean_abs_shap
-        }).sort_values('importance', ascending=True).tail(20)
-        
-        fig, ax = plt.subplots(figsize=(10, 10))
-        
-        ax.barh(shap_df['feature'], shap_df['importance'], color='steelblue')
-        ax.set_xlabel('Mean |SHAP Value|', fontsize=12)
-        ax.set_title('Top 20 Feature Importance (SHAP)', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3, axis='x')
-        
-        plt.tight_layout()
-        
-        # Save plot
-        os.makedirs(save_path, exist_ok=True)
-        file_path = f"{save_path}/{target_name}_shap_bar.png"
-        plt.savefig(file_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        logger.info(f"  ✓ Saved SHAP bar plot to: {file_path}")
-        
-        return file_path
-    except ImportError:
-        logger.warning("  ⚠️ SHAP not installed. Skipping SHAP bar plot.")
-        return None
+    # Distribution by actual class
+    repurchase_probs = y_proba[y_test == 1]
+    no_repurchase_probs = y_proba[y_test == 0]
+    
+    axes[0].hist(no_repurchase_probs, bins=50, alpha=0.7, label='No Repurchase', color='#e74c3c')
+    axes[0].hist(repurchase_probs, bins=50, alpha=0.7, label='Repurchase', color='#2ecc71')
+    axes[0].set_xlabel('Predicted Probability', fontsize=11)
+    axes[0].set_ylabel('Count', fontsize=11)
+    axes[0].set_title('Probability Distribution by Actual Class', fontsize=12)
+    axes[0].legend(fontsize=10)
+    axes[0].axvline(x=0.3, color='orange', linestyle='--', alpha=0.7)
+    axes[0].axvline(x=0.6, color='green', linestyle='--', alpha=0.7)
+    
+    # Overall distribution with segments
+    axes[1].hist(y_proba, bins=50, alpha=0.7, color='#3498db')
+    axes[1].axvline(x=0.3, color='orange', linestyle='--', linewidth=2, label='30% threshold')
+    axes[1].axvline(x=0.6, color='green', linestyle='--', linewidth=2, label='60% threshold')
+    axes[1].set_xlabel('Predicted Probability', fontsize=11)
+    axes[1].set_ylabel('Count', fontsize=11)
+    axes[1].set_title('Overall Probability Distribution', fontsize=12)
+    axes[1].legend(fontsize=10)
+    
+    # Add segment labels
+    axes[1].text(0.15, axes[1].get_ylim()[1]*0.9, 'Low\nPropensity', ha='center', fontsize=10, color='#e74c3c')
+    axes[1].text(0.45, axes[1].get_ylim()[1]*0.9, 'Medium\nPropensity', ha='center', fontsize=10, color='#f39c12')
+    axes[1].text(0.8, axes[1].get_ylim()[1]*0.9, 'High\nPropensity', ha='center', fontsize=10, color='#2ecc71')
+    
+    plt.tight_layout()
+    
+    os.makedirs(save_path, exist_ok=True)
+    file_path = f"{save_path}/{target_name}_propensity_distribution.png"
+    plt.savefig(file_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    logger.info(f"  ✓ Saved propensity distribution to: {file_path}")
+    
+    return file_path
 
 
 # ============================================================================
@@ -556,7 +538,8 @@ def plot_shap_bar(shap_values, feature_names, target_name='will_purchase', save_
 # ============================================================================
 
 def generate_all_evaluation_plots(results, comparison_df, best_metrics, best_model_name,
-                                  target_name='will_purchase', save_path=PLOTS_PATH):
+                                  y_test, y_proba,
+                                  target_name='will_repurchase', save_path=PLOTS_PATH):
     """
     Generate all model evaluation plots.
     
@@ -565,6 +548,8 @@ def generate_all_evaluation_plots(results, comparison_df, best_metrics, best_mod
         comparison_df: Model comparison DataFrame
         best_metrics: Best model metrics
         best_model_name: Name of best model
+        y_test: Test labels
+        y_proba: Best model probabilities
         target_name: Name of target variable
         save_path: Path to save plots
         
@@ -574,6 +559,8 @@ def generate_all_evaluation_plots(results, comparison_df, best_metrics, best_mod
     logger.info("="*80)
     logger.info("GENERATING EVALUATION PLOTS")
     logger.info("="*80)
+    
+    os.makedirs(save_path, exist_ok=True)
     
     plot_paths = {}
     
@@ -591,7 +578,49 @@ def generate_all_evaluation_plots(results, comparison_df, best_metrics, best_mod
         best_metrics['confusion_matrix'], best_model_name, target_name, save_path
     )
     
+    # Propensity distribution
+    plot_paths['propensity_distribution'] = plot_propensity_distribution(
+        y_test, y_proba, target_name, save_path
+    )
+    
     logger.info("\n✓ All evaluation plots generated")
+    
+    return plot_paths
+
+
+def generate_segment_plots(propensity_df, target_name='will_repurchase', save_path=PLOTS_PATH):
+    """
+    Generate all segment × propensity plots.
+    
+    Args:
+        propensity_df: DataFrame with user_id, value_cluster, propensity_score
+        target_name: Name of target variable
+        save_path: Path to save plots
+        
+    Returns:
+        dict: Paths to generated plots
+    """
+    logger.info("="*80)
+    logger.info("GENERATING SEGMENT PLOTS")
+    logger.info("="*80)
+    
+    os.makedirs(save_path, exist_ok=True)
+    
+    plot_paths = {}
+    
+    # Box plot
+    plot_paths['segment_boxplot'] = plot_segment_propensity_boxplot(propensity_df, target_name, save_path)
+    
+    # Violin plot
+    plot_paths['segment_violin'] = plot_segment_propensity_violin(propensity_df, target_name, save_path)
+    
+    # Heatmap
+    plot_paths['segment_heatmap'] = plot_segment_propensity_heatmap(propensity_df, target_name, save_path)
+    
+    # Strategic matrix
+    plot_paths['strategic_matrix'] = plot_strategic_matrix(propensity_df, target_name, save_path)
+    
+    logger.info("\n✓ All segment plots generated")
     
     return plot_paths
 
@@ -602,6 +631,6 @@ def generate_all_evaluation_plots(results, comparison_df, best_metrics, best_mod
 
 if __name__ == "__main__":
     # This module is typically imported and used by other scripts
-    print("Visualization module loaded successfully.")
+    print("Order-Based Visualization module loaded successfully.")
     print("Use generate_all_evaluation_plots() to create model evaluation plots.")
-    print("Use plot_segment_propensity_* functions for segment analysis.")
+    print("Use generate_segment_plots() for segment analysis.")
