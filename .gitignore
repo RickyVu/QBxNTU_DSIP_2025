@@ -1,0 +1,32 @@
+# Original data — excluded from version control
+original_data/
+
+# Generated plots and images
+pictures/
+case2/outputs/
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# macOS metadata
+.DS_Store
+
+# Environment variables
+.env
+*.env
+
+# IDE / editor config
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

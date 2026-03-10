@@ -1,0 +1,29 @@
+# Python 3.8+ required
+
+# Data manipulation and analysis
+pandas
+numpy
+
+# Progress bars
+tqdm
+
+# Visualization
+matplotlib
+seaborn
+
+# Machine learning
+scikit-learn
+
+# Gradient boosting models
+xgboost
+lightgbm
+
+# Model interpretability
+shap
+
+# Model persistence
+joblib
+
+# Jupyter notebook support
+jupytext
+notebook
